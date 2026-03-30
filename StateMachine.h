@@ -51,8 +51,9 @@ private:
     DisplayManager* _display;
 
     State         _state;
-    bool          _displayShowingContent;   // Hat Display einen sinnvollen Inhalt?
-    bool          _pendingDisplayUpdate;    // Neues Bild wartet auf Anzeige
+    bool          _displayShowingContent;      // Hat Display einen sinnvollen Inhalt?
+    bool          _pendingDisplayUpdate;       // Neues Bild wartet auf Anzeige
+    bool          _pendingStoredImageDisplay;  // Gespeichertes Bild nach NTP zeigen
     unsigned long _lastUpdateMs;            // millis() des letzten Download-Versuchs
     unsigned long _ntpLastAttemptMs;        // millis() des letzten NTP-Versuchs
     unsigned long _stateEnteredMs;          // millis() beim letzten Zustandswechsel

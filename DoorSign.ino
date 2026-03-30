@@ -5,6 +5,16 @@
 //    - ESP32 DevKit (oder kompatibles Board)
 //    - Waveshare 7.5" E-Ink Display (800×480, Schwarz/Weiß)
 //
+// PIN	ESP32	Description
+// VCC	3V3	Power positive (3.3V power supply input)
+// GND	GND	Ground
+// DIN	P14	SPI's MOSI, data input
+// SCLK	P13	SPI's CLK, clock signal input
+// CS	P15	Chip selection, low active
+// DC	P27	Data/Command, low for command, high for data
+// RST	P26	Reset, low active
+// BUSY	P25	Busy status output pin (indicating busy)
+//
 //  Bibliotheken (in Arduino Library Manager installieren):
 //    - GxEPD2 by ZinggJM (getestet mit v1.5.x)
 //    - Adafruit GFX Library (Abhängigkeit von GxEPD2)
@@ -32,10 +42,7 @@
 
 #include <Arduino.h>
 #include <WiFi.h>
-
-#if OTA_ENABLED
-  #include <ArduinoOTA.h>
-#endif
+#include <ArduinoOTA.h>
 
 #include "config.h"
 #include "Logger.h"
@@ -46,9 +53,12 @@
 #include "StateMachine.h"
 
 // ============================================================
+//  Vorwärts-Deklarationen
+// ============================================================
+void registerOTAHandlers();
+
+// ============================================================
 //  Globale Objekte
-//  Reihenfolge beachten: Manager-Objekte werden vor StateMachine
-//  erstellt, StateMachine hält nur Zeiger darauf.
 // ============================================================
 WifiManager    wifiManager(WIFI_SSID, WIFI_PASSWORD);
 TimeManager    timeManager;
@@ -57,88 +67,81 @@ DisplayManager displayManager;
 StateMachine   stateMachine(&wifiManager, &timeManager,
                             &imageManager, &displayManager);
 
+// OTA nur einmalig starten, NACHDEM WLAN verbunden ist
+static bool _otaStarted = false;
+
 // ============================================================
 //  setup()
 // ============================================================
 void setup() {
     Serial.begin(SERIAL_BAUD_RATE);
-    delay(500);  // Kurze Pause damit der serielle Monitor sich verbinden kann
+    delay(500);
 
     Serial.println();
     Serial.println("=========================================");
-    Serial.println("  DoorSign — Digitales Konferenzschild  ");
+    Serial.println("  DoorSign -- Digitales Konferenzschild  ");
     Serial.println("=========================================");
-    logInfo("MAIN", "Gerät:    " + String(DEVICE_NAME));
-    logInfo("MAIN", "Raum:     " + String(ROOM_NAME));
-    logInfo("MAIN", "Firmware: " + String(__DATE__) + " " + String(__TIME__));
-    logInfo("MAIN", "ESP32 Chip-ID: " + String((uint32_t)(ESP.getEfuseMac() >> 32), HEX));
+    logInfo("MAIN", "Geraet:    " + String(DEVICE_NAME));
+    logInfo("MAIN", "Raum:      " + String(ROOM_NAME));
+    logInfo("MAIN", "Firmware:  " + String(__DATE__) + " " + String(__TIME__));
     logHeap("MAIN");
 
-    // ---- Hardware initialisieren ----
-
-    // 1. LittleFS für persistenten Speicher
     if (!imageManager.begin()) {
         logError("MAIN", "KRITISCH: LittleFS Init fehlgeschlagen!");
-        // System läuft weiter, aber ohne persistenten Speicher
     }
 
-    // 2. Zeitzone konfigurieren (vor NTP-Sync)
     timeManager.begin();
-
-    // 3. Display initialisieren
     displayManager.begin();
 
-    // 4. OTA-Update vorbereiten (optional)
 #if OTA_ENABLED
-    setupOTA();
+    // Nur Callbacks registrieren — begin() erst nach WLAN-Connect (in loop)
+    registerOTAHandlers();
 #endif
 
-    // 5. State Machine starten (zeigt ggf. gespeichertes Bild oder Fallback)
     stateMachine.begin();
-
     logInfo("MAIN", "setup() abgeschlossen");
 }
 
 // ============================================================
 //  loop()
-//  Wird kontinuierlich aufgerufen. Enthält keine blocking delays.
-//  Alle Wartelogik ist in der StateMachine via millis() realisiert.
 // ============================================================
 void loop() {
-    // State Machine vorantreiben
     stateMachine.update();
 
 #if OTA_ENABLED
-    // OTA-Update-Handler regelmäßig aufrufen
-    ArduinoOTA.handle();
+    // ArduinoOTA.begin() erfordert aktives WLAN (mDNS-Stack).
+    // Deshalb hier lazy initialisieren, sobald WLAN das erste Mal verbunden ist.
+    if (!_otaStarted && WiFi.isConnected()) {
+        ArduinoOTA.begin();
+        _otaStarted = true;
+        logInfo("OTA", "ArduinoOTA gestartet (IP: " + WiFi.localIP().toString() + ")");
+    }
+    if (_otaStarted) {
+        ArduinoOTA.handle();
+    }
 #endif
 
-    // Sehr kurze Pause um Watchdog zu bedienen und CPU-Last zu reduzieren.
-    // Die StateMachine kehrt bei nicht-blockierenden Zuständen sofort zurück.
     delay(10);
 }
 
 // ============================================================
-//  OTA-Setup (optional)
+//  OTA-Callbacks registrieren (kein begin() hier!)
 // ============================================================
-#if OTA_ENABLED
-void setupOTA() {
+void registerOTAHandlers() {
     ArduinoOTA.setPort(OTA_PORT);
     ArduinoOTA.setHostname(DEVICE_NAME);
     ArduinoOTA.setPassword(OTA_PASSWORD);
 
     ArduinoOTA.onStart([]() {
-        String type = (ArduinoOTA.getCommand() == U_FLASH) ? "Firmware" : "LittleFS";
-        logInfo("OTA", "Update gestartet: " + type);
-        // Display während OTA nicht anfassen
+        logInfo("OTA", "Update gestartet");
     });
 
     ArduinoOTA.onEnd([]() {
-        logInfo("OTA", "Update abgeschlossen — Neustart...");
+        logInfo("OTA", "Update abgeschlossen -- Neustart...");
     });
 
     ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-        static uint8_t lastPct = 0;
+        static uint8_t lastPct = 255;
         uint8_t pct = (uint8_t)(progress * 100 / total);
         if (pct != lastPct && pct % 10 == 0) {
             logInfo("OTA", "Fortschritt: " + String(pct) + "%");
@@ -147,20 +150,8 @@ void setupOTA() {
     });
 
     ArduinoOTA.onError([](ota_error_t error) {
-        String errMsg;
-        switch (error) {
-            case OTA_AUTH_ERROR:    errMsg = "Authentifizierung fehlgeschlagen"; break;
-            case OTA_BEGIN_ERROR:   errMsg = "Begin fehlgeschlagen";             break;
-            case OTA_CONNECT_ERROR: errMsg = "Verbindungsfehler";                break;
-            case OTA_RECEIVE_ERROR: errMsg = "Empfangsfehler";                   break;
-            case OTA_END_ERROR:     errMsg = "End fehlgeschlagen";               break;
-            default:                errMsg = "Unbekannter Fehler";               break;
-        }
-        logError("OTA", "Fehler [" + String(error) + "]: " + errMsg);
+        logError("OTA", "Fehler: " + String(error));
     });
 
-    ArduinoOTA.begin();
-    logInfo("OTA", "OTA bereit auf Port " + String(OTA_PORT) +
-                   ", Hostname: " + String(DEVICE_NAME));
+    logInfo("OTA", "OTA-Callbacks registriert (startet nach WLAN-Verbindung)");
 }
-#endif

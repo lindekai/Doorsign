@@ -43,6 +43,7 @@ StateMachine::StateMachine(WifiManager*    wifi,
       _state(State::BOOT),
       _displayShowingContent(false),
       _pendingDisplayUpdate(false),
+      _pendingStoredImageDisplay(false),
       _lastUpdateMs(0),
       _ntpLastAttemptMs(0),
       _stateEnteredMs(0),
@@ -52,18 +53,25 @@ void StateMachine::begin() {
     logInfo("SM", "=== DoorSign " + String(DEVICE_NAME) +
                   " — " + String(ROOM_NAME) + " ===");
 
-    // Falls bereits ein Bild gespeichert ist: beim Start direkt anzeigen.
-    // So ist das Display immer aktuell, auch nach Stromausfall.
+    // Startbildschirm anzeigen — gibt sofortige visuelle Rueckmeldung.
+    // Das E-Ink-Panel benoetigt nach einem Full-Refresh mehrere Sekunden
+    // Erholung. Deshalb wird hier NUR der Startbildschirm angezeigt und
+    // KEIN weiteres Bild geladen. Der normale Update-Zyklus (IDLE →
+    // DOWNLOADING → UPDATING_DISPLAY) uebernimmt nach WLAN + NTP.
+    logInfo("SM", "Zeige Startbildschirm...");
     if (_image->hasStoredImage()) {
-        logInfo("SM", "Gespeichertes Bild gefunden — zeige beim Start an");
-        if (_display->showImageFromFile(FS_IMAGE_PATH)) {
-            _displayShowingContent = true;
-            logInfo("SM", "Letztes bekanntes Bild wiederhergestellt");
-        }
+        _display->showStartup("Letztes Bild vorhanden — verbinde WLAN...");
     } else {
-        logInfo("SM", "Kein gespeichertes Bild — zeige Fallback");
-        _display->showFallback();
-        _displayShowingContent = false;
+        _display->showStartup("Verbinde mit WLAN: " + String(WIFI_SSID));
+    }
+    _displayShowingContent = false;  // Warten auf normalen Update-Zyklus
+
+    // Wenn ein gespeichertes Bild vorhanden ist, soll es im ersten
+    // IDLE-Durchlauf angezeigt werden — unabhaengig vom Zeitfenster.
+    // Dafuer _pendingStoredImageDisplay setzen.
+    if (_image->hasStoredImage()) {
+        logInfo("SM", "Gespeichertes Bild vorhanden — wird nach NTP-Sync angezeigt");
+        _pendingStoredImageDisplay = true;
     }
 
     setState(State::BOOT);
@@ -136,7 +144,22 @@ void StateMachine::handleIdle() {
         return;
     }
 
-    // 3. Update starten wenn fällig und aktives Zeitfenster
+    // 3. Gespeichertes Bild einmalig nach NTP-Sync anzeigen
+    //    (Display hat sich nach dem Startbildschirm erholt: WLAN+NTP = mind. 5–30s)
+    if (_pendingStoredImageDisplay && _time->isSynced()) {
+        logInfo("SM", "Zeige gespeichertes Bild (nach Settle-Zeit)...");
+        _pendingStoredImageDisplay = false;
+        if (_display->showImageFromFile(FS_IMAGE_PATH)) {
+            _displayShowingContent = true;
+            _display->hibernate();
+            logInfo("SM", "Gespeichertes Bild wiederhergestellt");
+        } else {
+            _display->showFallback();
+        }
+        return;
+    }
+
+    // 4. Update starten wenn fällig und aktives Zeitfenster
     if (isUpdateDue()) {
         if (_time->isInActiveWindow()) {
             logInfo("SM", "Update fällig und im aktiven Zeitfenster → Download");

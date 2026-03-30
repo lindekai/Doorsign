@@ -6,21 +6,12 @@
 //  Alle anderen Blöcke auskommentiert lassen.
 // ============================================================
 
-// --- Gerät 1: Konferenzraum Alpha ---
-#define DEVICE_NAME    "DoorSign-Alpha"
-#define ROOM_NAME      "Konferenzraum Alpha"
-#define IMAGE_URL      "http://192.168.1.100/api/room/alpha/image.png"
-#define WIFI_SSID      "MeinNetzwerk"
-#define WIFI_PASSWORD  "MeinPasswort"
-
-/*
-// --- Gerät 2: Konferenzraum Beta ---
-#define DEVICE_NAME    "DoorSign-Beta"
-#define ROOM_NAME      "Konferenzraum Beta"
-#define IMAGE_URL      "http://192.168.1.100/api/room/beta/image.png"
-#define WIFI_SSID      "MeinNetzwerk"
-#define WIFI_PASSWORD  "MeinPasswort"
-*/
+// --- Gerät Beispiel: Konferenzraum Bespiel ---
+#define DEVICE_NAME    "DoorSign-Beispiel"
+#define ROOM_NAME      "Konferenzraum Beispiel"
+#define IMAGE_URL      "https://domain.com/bild.png"
+#define WIFI_SSID      "MyWiFi"
+#define WIFI_PASSWORD  "geheim"
 
 // ============================================================
 //  ZEITKONFIGURATION
@@ -53,25 +44,30 @@
 // ============================================================
 //  DISPLAY-PINBELEGUNG  (ESP32  ↔  Waveshare 7.5" E-Paper)
 // ============================================================
+//  Pinbelegung laut Waveshare ESP32 Driver Board:
 //  ┌────────────────┬────────────┬──────────────────────────────┐
 //  │ E-Paper Pin    │ ESP32 GPIO │ Beschreibung                 │
 //  ├────────────────┼────────────┼──────────────────────────────┤
-//  │ VCC            │ 3.3 V      │ Versorgungsspannung          │
+//  │ VCC            │ 3V3        │ Versorgungsspannung          │
 //  │ GND            │ GND        │ Masse                        │
-//  │ DIN / MOSI     │ GPIO 23    │ SPI Data In  (Hardware SPI)  │
-//  │ CLK / SCK      │ GPIO 18    │ SPI Clock    (Hardware SPI)  │
-//  │ CS  / NSS      │ GPIO  5    │ Chip Select  (aktiv LOW)     │
-//  │ DC             │ GPIO 17    │ Data / Command Select        │
-//  │ RST            │ GPIO 16    │ Hardware Reset  (aktiv LOW)  │
-//  │ BUSY           │ GPIO  4    │ Busy-Signal     (aktiv HIGH) │
+//  │ DIN / MOSI     │ GPIO 14    │ SPI Data In  (P14)           │
+//  │ SCLK / SCK     │ GPIO 13    │ SPI Clock    (P13)           │
+//  │ CS             │ GPIO 15    │ Chip Select  (aktiv LOW, P15)│
+//  │ DC             │ GPIO 27    │ Data / Command Select (P27)  │
+//  │ RST            │ GPIO 26    │ Hardware Reset (aktiv LOW, P26)│
+//  │ BUSY           │ GPIO 25    │ Busy-Signal (aktiv HIGH, P25)│
 //  └────────────────┴────────────┴──────────────────────────────┘
-//  MOSI (GPIO 23) und SCK (GPIO 18) werden automatisch vom
-//  Hardware-SPI des ESP32 verwendet — keine weitere Konfiguration nötig.
-// [DISPLAY-ABHÄNGIG] Pins hier anpassen, falls abweichende Verdrahtung:
-#define PIN_EPD_CS    5
-#define PIN_EPD_DC   17
-#define PIN_EPD_RST  16
-#define PIN_EPD_BUSY  4
+//  WICHTIG: GPIO 13/14 sind NICHT die Standard-SPI-Pins des ESP32.
+//  SPI.begin() muss in DisplayManager::begin() explizit mit diesen
+//  Pins aufgerufen werden — das ist bereits im Code erledigt.
+// [DISPLAY-ABHÄNGIG] Pins hier anpassen falls andere Verdrahtung:
+#define PIN_EPD_CS    15
+#define PIN_EPD_DC    27
+#define PIN_EPD_RST   26
+#define PIN_EPD_BUSY  25
+#define PIN_SPI_MOSI  14
+#define PIN_SPI_SCK   13
+#define PIN_SPI_MISO  -1   // MISO wird vom E-Ink-Display nicht benutzt
 
 // ============================================================
 //  BILDFORMAT — PNG
@@ -81,9 +77,16 @@
 // Dateigröße: 14 (BMP-Header) + 40 (DIB-Header) + 8 (Farbtabelle)
 //   + 100 × 480 (Pixeldaten, 100 Bytes/Zeile für 800 Px) = 48062 Bytes.
 // [DISPLAY-ABHÄNGIG] Bei anderem Display Breite/Höhe hier anpassen:
-#define IMG_WIDTH     800
-#define IMG_HEIGHT    480
-#define IMG_MAX_BYTES (200UL * 1024UL)  // 64 KB Sicherheits-Obergrenze
+// [DISPLAY-ABHÄNGIG] V1=640x384, V2=800x480 — hier die korrekte Aufloesung setzen:
+#define IMG_WIDTH     640
+#define IMG_HEIGHT    384
+#define IMG_MAX_BYTES       (200UL * 1024UL)  // 200 KB Sicherheits-Obergrenze
+
+// Schwellwert fuer Graustufen -> schwarzweiss (0-255).
+// Pixel mit Helligkeit >= Schwellwert -> weiss, darunter -> schwarz.
+// #define IMG_GRAY_THRESHOLD  128
+
+#define IMG_GRAY_THRESHOLD  127
 
 // Wenn das Display nach dem ersten Flash invertierte Farben zeigt,
 // diesen Wert auf 1 setzen:
@@ -109,7 +112,7 @@
 // ============================================================
 // Wenn das Display nach dem ersten Flash invertierte Farben zeigt,
 // diesen Wert auf 1 setzen:
-#define DISPLAY_INVERT_IMAGE  0             // 0 = normal, 1 = invertiert
+#define DISPLAY_INVERT_IMAGE  1             // 0 = normal, 1 = invertiert
 
 // ============================================================
 //  SERIELLE AUSGABE

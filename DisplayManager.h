@@ -1,32 +1,54 @@
 #pragma once
 #include <Arduino.h>
+#include "config.h"
 
 // ============================================================
-//  DISPLAY-TREIBER AUSWAHL  [DISPLAY-ABHÄNGIG]
+//  DISPLAY-TREIBER  [DISPLAY-ABHÄNGIG]
+//  Wird automatisch aus DISPLAY_TYPE in config.h gewählt.
+//
+//  V1: GxEPD2_BW  + GxEPD2_750      (640x384, S/W)
+//  V2: GxEPD2_BW  + GxEPD2_750_T7   (800x480, S/W)
+//  V3: GxEPD2_3C  + GxEPD2_750c_Z90 (800x480, S/W/ROT)
+//      → anderer Include-Ordner: epd3c/ statt epd/
+//      → andere Basisklasse: GxEPD2_3C statt GxEPD2_BW
 // ============================================================
-#include <GxEPD2_BW.h>
-// #include <epd/GxEPD2_750_T7.h> // Waveshare 7.5" V2 (800x480) — NICHT dieses
-#include <epd/GxEPD2_750.h>       // [DISPLAY-ABHÄNGIG] Waveshare 7.5" V1 (640x384) ← aktiv
 
-#include <PNGdec.h>
+#if DISPLAY_TYPE == DISPLAY_V3
+  // 3-Farb-Display: GxEPD2_3C als Basisklasse
+  #include <GxEPD2_3C.h>
+  #include <epd3c/GxEPD2_750c_Z90.h>
+#elif DISPLAY_TYPE == DISPLAY_V2
+  #include <GxEPD2_BW.h>
+  #include <epd/GxEPD2_750_T7.h>
+#else
+  // V1 (Standard)
+  #include <GxEPD2_BW.h>
+  #include <epd/GxEPD2_750.h>
+#endif
+
+// PNG-Decoder (nur wenn PNG-Modus aktiv)
+#if IMAGE_FORMAT_PNG
+  #include <PNGdec.h>
+#endif
+
 #include <Fonts/FreeMonoBold18pt7b.h>
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <LittleFS.h>
 #include <SPI.h>
-#include "config.h"
 
 // ============================================================
-//  Globaler Kontext für PNGdec-Callback
-//  rowBuf: einmal alloziert, für alle 480 Zeilen wiederverwendet
+//  Kontext für PNGdec-Callback
 // ============================================================
+#if IMAGE_FORMAT_PNG
 struct PngRenderContext {
-    uint8_t*  pixBuf;         // 1-Bit Zielpuffer  (48 000 Bytes)
-    uint16_t* rowBuf;         // RGB565-Zeilenpuffer (1 600 Bytes, wiederverwendet)
+    uint8_t*  pixBuf;
+    uint16_t* rowBuf;
     int32_t   displayWidth;
     int32_t   displayHeight;
     bool      invert;
 };
 extern PngRenderContext g_pngCtx;
+#endif
 
 // ============================================================
 //  DisplayManager
@@ -42,11 +64,23 @@ public:
     bool isInitialized() const { return _initialized; }
 
 private:
-    // [DISPLAY-ABHÄNGIG] Treiber-Typ hier anpassen wenn Treiber wechselt
-    GxEPD2_BW<GxEPD2_750, GxEPD2_750::HEIGHT> _display;
+    // [DISPLAY-ABHÄNGIG] Treiber-Typ aus DISPLAY_TYPE
+#if DISPLAY_TYPE == DISPLAY_V3
+    GxEPD2_3C<GxEPD2_750c_Z90, GxEPD2_750c_Z90::HEIGHT> _display;
+#elif DISPLAY_TYPE == DISPLAY_V2
+    GxEPD2_BW<GxEPD2_750_T7,   GxEPD2_750_T7::HEIGHT>   _display;
+#else
+    GxEPD2_BW<GxEPD2_750,      GxEPD2_750::HEIGHT>       _display;
+#endif
+
     bool _initialized;
 
+#if IMAGE_FORMAT_PNG
     bool renderPng(const char* path);
+#else
+    bool renderBmp(const char* path);
+#endif
+
     void drawCenteredText(const String& text, int16_t y);
     void drawBorder();
 };

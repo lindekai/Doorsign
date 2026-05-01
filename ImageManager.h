@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <HTTPClient.h>
+#include "config.h"
 
 // ============================================================
 //  Download-Ergebnis
@@ -11,12 +12,13 @@ enum class DownloadResult {
     SUCCESS_UNCHANGED,  // Server: 304 Not Modified
     ERROR_NO_WIFI,      // Keine WLAN-Verbindung
     ERROR_HTTP,         // HTTP-Fehler
-    ERROR_INVALID_PNG,  // Keine gültige PNG-Datei
+    ERROR_INVALID_IMAGE,// Ungültige Bilddatei (PNG oder BMP)
     ERROR_STORAGE       // LittleFS-Fehler
 };
 
 // ============================================================
 //  ImageManager — HTTP-Download, ETag-Caching, LittleFS
+//  Unterstützt PNG und BMP (umschaltbar via config.h)
 // ============================================================
 class ImageManager {
 public:
@@ -29,5 +31,9 @@ public:
 private:
     String readFile(const char* path) const;
     void   writeFile(const char* path, const String& content);
-    bool   validatePng(const char* path) const;
+
+    // Format-spezifische Validierung
+    bool validateImage(const char* path) const;
+    bool validatePng(const char* path) const;
+    bool validateBmp(const char* path) const;
 };

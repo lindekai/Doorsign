@@ -205,7 +205,7 @@ void StateMachine::handleDownloading() {
             setState(State::ERROR_RECOVERY);
             break;
 
-        case DownloadResult::ERROR_INVALID_PNG:
+        case DownloadResult::ERROR_INVALID_IMAGE:
             logError("SM", "Ungültige BMP — Server-Konfiguration prüfen");
             _errorRecoveryDelayMs = 60000UL;  // 60s Pause bei ungültigem Bild
             setState(State::ERROR_RECOVERY);

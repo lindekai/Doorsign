@@ -1,23 +1,17 @@
-<<<<<<< HEAD
-# Arduino Build-Ordner
+# Arduino Build-Artefakte
 build/
 *.bin
 *.elf
 *.map
+*.hex
 
-# macOS
+# Betriebssystem
 .DS_Store
-
-# Windows
 Thumbs.db
 desktop.ini
 
-# VSCode
+# Editor
 .vscode/
-
-# Arduino IDE temporäre Dateien
 *.tmp
-
-# WICHTIG: Lokale Konfiguration mit echten Passwörtern
-# Falls du eine separate config_local.h nutzt, hier eintragen:
-# config_local.h
+*.swp
+*~

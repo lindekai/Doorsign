@@ -1,0 +1,142 @@
+#include "DeepSleepManager.h"
+#include "Logger.h"
+#include <esp_sleep.h>
+#include <time.h>
+#include <SPI.h>
+
+// RTC-RAM Sektion — bleibt bei Deep Sleep erhalten
+RTC_DATA_ATTR static RtcData rtcStore = {0, 0};
+
+DeepSleepManager::DeepSleepManager() : _wakeFromSleep(false) {}
+
+void DeepSleepManager::begin() {
+    // Wakeup-Grund ermitteln
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    _wakeFromSleep = (cause == ESP_SLEEP_WAKEUP_TIMER);
+
+    // RTC-Daten validieren
+    if (rtcStore.crc != calcCrc(rtcStore) || !_wakeFromSleep) {
+        // Kaltstart oder korrupte Daten → initialisieren
+        rtcStore.bootCount = 0;
+    }
+
+    rtcStore.bootCount++;
+    rtcStore.crc = calcCrc(rtcStore);
+
+    logInfo("SLEEP", "Boot #" + String(rtcStore.bootCount) +
+                     " | Wakeup: " + getWakeupReason());
+}
+
+bool DeepSleepManager::isWakeFromSleep() const {
+    return _wakeFromSleep;
+}
+
+uint32_t DeepSleepManager::getBootCount() const {
+    return rtcStore.bootCount;
+}
+
+void DeepSleepManager::sleepUntilNextUpdate() {
+    uint64_t sleepSec = secondsUntilNextActiveWindow();
+
+    logInfo("SLEEP", "Deep Sleep fuer " + String((uint32_t)sleepSec) +
+                     " Sekunden (" + String((uint32_t)(sleepSec / 60)) + " Minuten)");
+
+    // Display ist bereits im Hibernate (hibernate() vor sleep() aufrufen!)
+    // SPI deaktivieren um Strom zu sparen
+    SPI.end();
+
+    // Wakeup-Timer konfigurieren (Einheit: Mikrosekunden)
+    esp_sleep_enable_timer_wakeup(sleepSec * 1000000ULL);
+
+    Serial.println("[INFO ] [SLEEP] Gute Nacht.");
+    Serial.flush();
+    delay(100);
+
+    esp_deep_sleep_start();
+    // Kehrt nicht zurück
+}
+
+uint64_t DeepSleepManager::secondsUntilNextActiveWindow() const {
+    // Ohne Zeitsync: normales Intervall schlafen
+    time_t now = time(nullptr);
+    if (now < 1704067200UL) {
+        logWarn("SLEEP", "Keine Zeitinfo — schlafe " +
+                         String(UPDATE_INTERVAL_SEC) + "s");
+        return (uint64_t)UPDATE_INTERVAL_SEC;
+    }
+
+    struct tm ti;
+    localtime_r(&now, &ti);
+
+    int wday = ti.tm_wday;   // 0=So, 1=Mo, ..., 6=Sa
+    int hour = ti.tm_hour;
+    int min  = ti.tm_min;
+    int sec  = ti.tm_sec;
+
+    // Im aktiven Fenster: normales Update-Intervall
+    bool activeDay  = (wday >= ACTIVE_WEEKDAY_FROM && wday <= ACTIVE_WEEKDAY_TO);
+    bool activeTime = (hour >= ACTIVE_HOUR_FROM && hour < ACTIVE_HOUR_TO);
+
+    if (activeDay && activeTime) {
+        logInfo("SLEEP", "Im aktiven Zeitfenster → schlafe " +
+                         String(UPDATE_INTERVAL_SEC) + "s");
+        return (uint64_t)UPDATE_INTERVAL_SEC;
+    }
+
+    // Außerhalb Zeitfenster: bis zum nächsten Werktagmorgen 08:00 schlafen.
+    // Berechnung: Sekunden bis zum nächsten 08:00 Mo–Fr.
+    int secondsToday = hour * 3600 + min * 60 + sec;
+    int targetSeconds = ACTIVE_HOUR_FROM * 3600;  // 08:00
+
+    // Tage bis zum nächsten aktiven Tag berechnen
+    int daysToNext = 0;
+    for (int d = 0; d < 8; d++) {
+        int checkDay = (wday + d) % 7;
+        int checkIsActive = (checkDay >= ACTIVE_WEEKDAY_FROM &&
+                             checkDay <= ACTIVE_WEEKDAY_TO);
+
+        if (checkIsActive) {
+            if (d == 0 && secondsToday < targetSeconds) {
+                // Heute noch vor 08:00
+                daysToNext = 0;
+                break;
+            } else if (d > 0) {
+                daysToNext = d;
+                break;
+            }
+        }
+    }
+
+    uint64_t sleepSec;
+    if (daysToNext == 0) {
+        // Heute, aber vor 08:00
+        sleepSec = (uint64_t)(targetSeconds - secondsToday);
+    } else {
+        // Nächster Werktag
+        sleepSec = (uint64_t)(daysToNext * 86400 - secondsToday + targetSeconds);
+    }
+
+    // Mindestens UPDATE_INTERVAL_SEC schlafen (Sicherheit)
+    if (sleepSec < (uint64_t)UPDATE_INTERVAL_SEC)
+        sleepSec = (uint64_t)UPDATE_INTERVAL_SEC;
+
+    logInfo("SLEEP", "Ausserhalb Zeitfenster → schlafe " +
+                     String((uint32_t)(sleepSec / 3600)) + "h " +
+                     String((uint32_t)((sleepSec % 3600) / 60)) + "min");
+    return sleepSec;
+}
+
+String DeepSleepManager::getWakeupReason() const {
+    switch (esp_sleep_get_wakeup_cause()) {
+        case ESP_SLEEP_WAKEUP_TIMER:     return "Timer (Deep Sleep)";
+        case ESP_SLEEP_WAKEUP_EXT0:      return "EXT0";
+        case ESP_SLEEP_WAKEUP_EXT1:      return "EXT1";
+        case ESP_SLEEP_WAKEUP_UNDEFINED: return "Kaltstart / Reset";
+        default:                         return "Unbekannt";
+    }
+}
+
+uint32_t DeepSleepManager::calcCrc(const RtcData& d) const {
+    // Einfache XOR-Prüfsumme über bootCount
+    return d.bootCount ^ 0xDEADBEEF;
+}

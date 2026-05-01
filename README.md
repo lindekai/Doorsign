@@ -424,8 +424,8 @@ DoorSign/
 ├── DeepSleepManager.h/.cpp   # Deep Sleep + intelligenter Wakeup
 ├── README.md                 # Diese Datei
 ├── CHANGELOG.md              # Versionshistorie
-├── GITHUB_ANLEITUNG.md       # Schritt-für-Schritt Git-Setup
-└── .gitignore                # Build-Artefakte
+└── GITHUB_ANLEITUNG.md       # Schritt-für-Schritt Git-Setup
+
 ```
 
 ---
@@ -444,4 +444,4 @@ DoorSign/
 
 ## Lizenz
 
-MIT License — frei verwendbar für private und kommerzielle Projekte.
+MIT License frei verwendbar für private und kommerzielle Projekte.

@@ -1,4 +1,4 @@
-# DoorSign — Digitales Türschild für Konferenzräume
+# DoorSign // Digitales Türschild für Konferenzräume
 
 ESP32 + Waveshare 7.5" E-Ink Display zeigt Raumbelegung aus einem Kalender-Server an.
 Der Server rendert pro Raum ein Bild (PNG oder BMP), der ESP32 lädt und zeigt es an.
